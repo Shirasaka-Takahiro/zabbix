@@ -1,0 +1,113 @@
+■zabbix5.0 構築手順
+
+※前提条件
+OS:Cent0S7
+環境:Virtualbox+Vagrant
+
+■構築順序
+1,zabbixサーバー/エージェントのインストール
+2,MySQLインストールと設定
+3,zabbix sclのインストール
+4,zabbixの起動
+5ブラウザから動作確認
+
+1,zabbixサーバー/エージェントのインストール
+yum -y update
+yum -y install https://repo.zabbix.com/zabbix/5.0/rhel/7/x86_64/zabbix-release-5.0-1.el7.noarch.rpm
+yum -y install zabbix-server-mysql zabbix-agent
+
+
+2,MySQLインストールと設定
+touch mysql.sh
+vi mysql.sh
+
+下記をコピーして貼り付ける
+＝＝＝＝＝ここから＝＝＝＝＝
+##This is a set-up script for the latest MySQL on CentOS7
+
+#!/bin/sh
+
+##remove mariadb
+yum -y remove mariadb-libs
+yum -y remove mysql-community-*
+rm -rf /var/lib/mysql/
+
+##install mysql
+yum list | grep mysql-community-server
+yum -y localinstall http://dev.mysql.com/get/mysql80-community-release-el7-5.noarch.rpm
+yum -y install mysql-community-server
+yum -y install mysql-community-client
+
+##start mysqld
+systemctl start mysqld.service
+systemctl enable mysqld.service
+systemctl status mysqld.service
+ps auxw | grep mysqld
+
+##get a temporary password
+cat /var/log/mysqld.log | grep "temporary password"
+
+##change password
+mysql_secure_installation
+
+##login as a root user
+mysql -u root -p
+
+＝＝＝＝＝ここまで＝＝＝＝＝
+
+sh ./mysql.sh
+
+パスワードを入力する
+'Password111!';
+
+3,zabbix sclのインストール
+zcat /usr/share/doc/zabbix-server-mysql-5.0.0/create.sql.gz | mysql -uzabbix zabbix -p
+
+vi /etc/zabbix/zabbix_server.conf
+DBPassword=[MySQLで設定したパスワード]
+
+vi /etc/yum.repos.d/zabbix.repo
+＝＝＝＝＝ここから＝＝＝＝＝
+[zabbix-frontend]
+name=Zabbix Official Repository frontend - $basearch
+baseurl=http://repo.zabbix.com/zabbix/5.0/rhel/7/$basearch/frontend
+enabled=1　←0を1へ変更
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-ZABBIX-A14FE591
+＝＝＝＝＝ここまで＝＝＝＝＝
+
+yum -y install centos-release-scl
+
+yum -y install zabbix-web zabbix-web-deps-scl zabbix-web-mysql-scl zabbix-apache-conf-scl zabbix-web-japanese
+
+vi /etc/opt/rh/rh-php72/php-fpm.d/zabbix.conf
+＝＝＝＝＝ここから＝＝＝＝＝
+php_value[date.timezone] = Asia/Tokyo
+＝＝＝＝＝ここまで＝＝＝＝＝
+
+
+4,zabbixの起動
+systemctl start zabbix-agent zabbix-server rh-php72-php-fpm httpd
+
+systemctl enable zabbix-agent zabbix-server rh-php72-php-fpm httpd
+
+systemctl status zabbix-agent zabbix-server rh-php72-php-fpm httpd
+
+systemctl status firewalld
+⇨「active」になっていたら無効にする
+参考）systemctl stop firewalld
+     systemctl status firewalld
+
+5ブラウザから動作確認
+ブラウザからhttp://ZabbixサーバーのIPアドレス/zabbix/へアクセス。
+
+※DB接続エラーが出力されたら下記をMySQL内で実施
+mysql> alter user 'hoge'@'localhost' identified with mysql_native_password by 'ここにパスワード';
+
+下記ブラウザを入力し、ログイン
+初期パスワード:zabbix
+初期パスワード:Admin
+
+SElinux無効化
+vi /etc/selinux/config
+SELINUX=disabled
